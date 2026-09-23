@@ -6,6 +6,9 @@ members = [
     "cli",
     "core",
     "core/proc-macros",
+    "harness/fossil-backend",
+    "harness/fossil-cas",
+    "harness/fossil-stores",
     "lib",
     "lib/gen-protos",
     "lib/testutils",
@@ -58,6 +61,7 @@ either = "1.16.0"
 erased-serde = "0.4.10"
 etcetera = "0.11.0"
 eyre = "0.6"
+flate2 = { version = "1.1.10", default-features = false, features = ["rust_backend"] }
 futures = "0.3.32"
 gix = { version = "0.87.1", default-features = false, features = [
     "attributes",
@@ -103,6 +107,7 @@ rayon = "1.12.0"
 ref-cast = "1.0.25"
 regex = "1.12.3"
 rpassword = "7.5.4"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 rustix = { version = "1.1.4", features = ["fs"] }
 rustversion = "1.0.22"
 same-file = "1.0.6"
@@ -111,6 +116,7 @@ sapling-streampager = "0.12.0"
 scm-record = "0.10.0"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0.150"
+sha3 = "0.11"
 shlex = "2.0.1"
 slab = "0.4.12"
 smallvec = { version = "1.15.1", features = [
@@ -147,6 +153,9 @@ winreg = "0.56"
 # their own (alphabetically sorted) block
 jj-core = { path = "core", version = "0.45.1" }
 jj-core-proc-macros = { path = "core/proc-macros", version = "0.45.1" }
+jj-fossil-backend = { path = "harness/fossil-backend", default-features = false }
+jj-fossil-cas = { path = "harness/fossil-cas", default-features = false }
+jj-fossil-stores = { path = "harness/fossil-stores" }
 jj-lib = { path = "lib", version = "0.45.1", default-features = false }
 testutils = { path = "lib/testutils" }
 

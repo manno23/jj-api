@@ -24,6 +24,7 @@ gix = { workspace = true, features = [
     "worktree-mutation",
 ] }
 itertools = { workspace = true }
+jj-fossil-backend = { workspace = true, features = ["rusqlite"] }
 jj-lib = { workspace = true, features = ["testing"] }
 pollster = { workspace = true }
 proptest = { workspace = true }
