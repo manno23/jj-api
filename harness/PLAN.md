@@ -70,13 +70,22 @@ pub fn with<T, E: From<SqlError>>(c: &dyn SqlConn, a: Access, f: impl FnOnce(&dy
 pub struct RusqliteConn;  // open, open_in_memory, shared(path) (one connection per file per process), with_max_value_len
 
 // store
-pub struct BlobStore; // open, put, put_in(x, hash, raw), get, get_in, rid, contains, conn
+pub struct BlobStore; // open, put, put_in(x, hash, raw), get, get_in, rid, contains, conn,
+                      // reader(hash) -> BlobReader (io::Read), writer() -> BlobWriter
 ```
 
 - A `Write` scope is a single transaction: `BEGIN IMMEDIATE` locally, or
   `transactionSync` on a DO. The executor passed into the scope cannot open
   another scope, so nested transactions are impossible.
-- New row ids come from `INSERT … RETURNING rid`. Integers stay below 2^53.
+- New row ids come from `INSERT … RETURNING rid`.
+- **Integer range:** every integer that crosses the SQL boundary, in
+  parameters and in results, must lie within ±(2^53 − 1)
+  (`sql::MAX_SAFE_INT`), because a DO passes numbers through JS doubles. This
+  covers every integer column: `rid`, `size`, `enc`, `jj_chunk.seq`,
+  `jj_object.kind`, and the future `wc_file` `exec`, `symlink` and `mtime`
+  fields. Hashes and ids are always text or blobs. `sql::check_params` and
+  `Row::int` reject violations, and every `SqlConn` must call
+  `check_params`.
 - `blob(rid, uuid UNIQUE, size, enc, content)`:
   - `uuid` is the lowercase-hex SHA3-256 of the **raw** bytes.
   - `enc`: `0` means raw, `1` means Fossil's `be32(len) ‖ zlib` layout. zlib
@@ -85,6 +94,20 @@ pub struct BlobStore; // open, put, put_in(x, hash, raw), get, get_in, rid, cont
 - Blobs larger than `max_value_len` are stored as `jj_chunk(rid, seq, data)`
   rows with `content` set to NULL. Only a DO triggers this, because of its
   2 MB limit.
+- **Bounded memory.** File content never has to fit in memory at once:
+  - `BlobReader` pages in one chunk row at a time and decompresses as a
+    stream. It checks the size column at the end.
+  - `BlobWriter` hashes incrementally. Once the content exceeds one value, it
+    writes raw chunks under a provisional name (`uuid` starting with `~`,
+    which never matches a lookup). When it finishes, it renames the blob to
+    its hash, or drops it if that hash is already stored.
+  - Memory per blob operation is therefore O(`max_value_len`): about 2 MB on
+    a DO. Locally the limit is SQLite's, so blobs stay inline.
+  - The backend's `read_file` and `write_file` use these streams. `get` and
+    `put` load the whole value, so they are kept for small structured
+    objects.
+  - An interrupted `BlobWriter` can leave a `~` blob behind; GC (§7) will
+    sweep these.
 - `config(name, value)` holds one schema-version row per layer.
 
 ### `jj-fossil-backend` (L1)
@@ -101,7 +124,9 @@ This crate implements `jj_core::backend::Backend` and depends only on
   - The codec is strict and bijective. Every ID is length-prefixed.
   - Decoding rejects an even number of merge terms, unsorted tree entries,
     non-minimal varints and trailing bytes.
-  - Labels are normalised with `ConflictLabels::from_merge`.
+  - Labels are normalised with `ConflictLabels::from_merge` on encode.
+    Decoding rejects anything that normalisation would change (a label on a
+    resolved tree, or all-empty labels): `DecodeError::Labels`.
   - A signed commit is stored as `unsigned ‖ 'S' ‖ bytes(sig)`.
     `secure_sig.data` is exactly the unsigned prefix.
 - `write_commit`:
@@ -113,8 +138,20 @@ This crate implements `jj_core::backend::Backend` and depends only on
 - Copies:
   - `jj_copy_edge(child, parent)`.
   - `write_copy` checks each parent: the blob must exist and decode as a copy.
-  - `get_related_copies` runs a recursive CTE, then `topo_order_reverse`. A
-    missing ID or a cycle is an error, never a panic.
+  - `get_related_copies` runs a recursive CTE, then `topo_order_reverse`.
+    The CTE uses `UNION`, so it terminates even on corrupt, cyclic edges.
+  - The order is deterministic whatever order SQL returns rows in:
+    1. results go into a map;
+    2. the walk starts from the **sorted** ids;
+    3. neighbours are each copy's stored `parents` list, which is part of its
+       content.
+  - A missing ID or a cycle is an error, never a panic.
+- **Tests cover every decoder rule with a negative fixture:** bad magic,
+  wrong kind, unknown version, truncation, non-minimal varint, bad bool,
+  unknown tag, invalid UTF-8, unsorted names, even merges, non-canonical
+  labels, and trailing bytes. Copy-graph tests cover a chain, a diamond (the
+  same order from every start), an unknown or non-copy parent, a missing ID,
+  and cyclic edges.
 
 ### `jj-fossil-stores` (L1, native for now)
 

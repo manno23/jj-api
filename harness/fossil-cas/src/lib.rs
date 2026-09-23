@@ -30,9 +30,12 @@ pub mod hash;
 pub mod schema;
 pub mod sql;
 pub mod store;
+pub mod stream;
 
 pub use crate::hash::ArtifactHash;
 pub use crate::store::BlobStore;
 pub use crate::store::CasError;
 pub use crate::store::CasResult;
 pub use crate::store::Rid;
+pub use crate::stream::BlobReader;
+pub use crate::stream::BlobWriter;

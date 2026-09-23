@@ -20,7 +20,13 @@
 //! * positional `?` parameters, at most 100 per statement;
 //! * no `BEGIN`/`SAVEPOINT` in SQL text. Atomicity is a [`SqlConn::scope`]
 //!   callback, which maps onto `transactionSync()` on a Durable Object;
-//! * values are exactly SQLite's storage classes.
+//! * values are exactly SQLite's storage classes;
+//! * every integer, in parameters and in results, lies within
+//!   ±[`MAX_SAFE_INT`], because a Durable Object passes numbers through JS
+//!   doubles. This covers every integer column (row ids, sizes, encodings,
+//!   chunk sequence numbers, kinds, flags, timestamps in milliseconds);
+//!   hashes and ids are always text or blobs. Connections reject violations
+//!   rather than silently losing precision.
 //!
 //! The executor handed to a scope has no way to open another scope, so nested
 //! transactions (and the deadlocks they cause) are impossible by construction.
@@ -29,12 +35,31 @@ use std::fmt::Debug;
 
 use thiserror::Error;
 
+/// The largest integer magnitude exactly representable on every connection:
+/// 2^53 - 1, the largest safe integer of a JS double.
+pub const MAX_SAFE_INT: i64 = (1 << 53) - 1;
+
+/// Rejects integer parameters outside ±[`MAX_SAFE_INT`]. Every [`SqlConn`]
+/// implementation calls this before running a statement.
+pub fn check_params(params: &[Param<'_>]) -> SqlResult<()> {
+    for (i, param) in params.iter().enumerate() {
+        if let Param::Int(n) = param
+            && n.unsigned_abs() > MAX_SAFE_INT as u64
+        {
+            return Err(SqlError(format!(
+                "parameter {i}: integer {n} is outside the safe range ±2^53"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// A borrowed statement parameter.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Param<'a> {
     /// SQL `NULL`.
     Null,
-    /// A 64-bit integer. Values above 2^53 lose precision on a Durable Object.
+    /// An integer within ±[`MAX_SAFE_INT`].
     Int(i64),
     /// UTF-8 text.
     Text(&'a str),
@@ -72,11 +97,9 @@ impl Row {
     /// Durable Object returns every number as a JS double.
     pub fn int(&self, i: usize) -> SqlResult<i64> {
         match self.get(i)? {
-            Value::Int(n) => Ok(*n),
+            Value::Int(n) if n.unsigned_abs() <= MAX_SAFE_INT as u64 => Ok(*n),
             #[expect(clippy::cast_possible_truncation)]
-            Value::Real(f) if f.fract() == 0.0 && f.abs() < 9_007_199_254_740_992.0 => {
-                Ok(*f as i64)
-            }
+            Value::Real(f) if f.fract() == 0.0 && f.abs() <= MAX_SAFE_INT as f64 => Ok(*f as i64),
             other => Err(SqlError(format!(
                 "column {i}: expected integer, got {other:?}"
             ))),
@@ -216,6 +239,7 @@ mod native {
     use super::SqlExec;
     use super::SqlResult;
     use super::Value;
+    use super::check_params;
 
     impl From<rusqlite::Error> for SqlError {
         fn from(err: rusqlite::Error) -> Self {
@@ -357,6 +381,7 @@ mod native {
 
     impl SqlExec for Exec<'_> {
         fn exec(&self, sql: &str, params: &[Param<'_>]) -> SqlResult<u64> {
+            check_params(params)?;
             let mut stmt = self.0.prepare_cached(sql)?;
             let n = stmt.execute(rusqlite::params_from_iter(to_sql(params)))?;
             Ok(n as u64)
@@ -367,6 +392,7 @@ mod native {
         }
 
         fn query(&self, sql: &str, params: &[Param<'_>]) -> SqlResult<Vec<Row>> {
+            check_params(params)?;
             let mut stmt = self.0.prepare_cached(sql)?;
             let ncols = stmt.column_count();
             let mut rows = stmt.query(rusqlite::params_from_iter(to_sql(params)))?;
@@ -453,6 +479,36 @@ mod tests {
         assert!(row.is_null(3).unwrap());
         assert_eq!(row.0[4], Value::Real(1.5));
         assert!(row.int(4).is_err());
+    }
+
+    #[test]
+    fn integers_outside_the_safe_range_are_rejected() {
+        let conn = setup();
+        let too_big = MAX_SAFE_INT + 1;
+        let result = with(&conn, Access::Write, |x| {
+            x.exec("INSERT INTO t(k) VALUES (?)", &[Param::Int(too_big)])
+        });
+        assert!(result.is_err());
+        let result = with(&conn, Access::Read, |x| {
+            x.query_row("SELECT ?", &[Param::Int(-too_big)])
+        });
+        assert!(result.is_err());
+        // Results are checked too.
+        let row = with(&conn, Access::Read, |x| {
+            x.query_row("SELECT 9007199254740993", &[])
+        })
+        .unwrap()
+        .unwrap();
+        assert!(row.int(0).is_err());
+        assert!(
+            Row(vec![Value::Real(9_007_199_254_740_992.0)])
+                .int(0)
+                .is_err()
+        );
+        assert_eq!(
+            Row(vec![Value::Int(MAX_SAFE_INT)]).int(0).unwrap(),
+            MAX_SAFE_INT
+        );
     }
 
     #[test]

@@ -28,6 +28,8 @@ use crate::sql::SqlConn;
 use crate::sql::SqlError;
 use crate::sql::SqlExec;
 use crate::sql::with;
+use crate::stream::BlobReader;
+use crate::stream::BlobWriter;
 
 /// Row id of a blob. Always below 2^53, so it survives a JS double.
 pub type Rid = i64;
@@ -52,7 +54,7 @@ pub enum CasError {
 pub type CasResult<T> = Result<T, CasError>;
 
 /// Room left in each row for the non-content columns.
-const ROW_OVERHEAD: usize = 1024;
+pub(crate) const ROW_OVERHEAD: usize = 1024;
 /// Largest chunk written when a blob exceeds the value limit.
 const MAX_CHUNK_LEN: usize = 1 << 20;
 
@@ -99,7 +101,7 @@ impl BlobStore {
         }
         let (encoding, stored) = codec::encode(raw);
         let size = i64::try_from(raw.len()).expect("blob size fits in i64");
-        let max_inline = self.conn.max_value_len().saturating_sub(ROW_OVERHEAD);
+        let max_inline = self.inline_max();
         let inline = stored.len() <= max_inline;
         let content = if inline {
             Param::Blob(&stored)
@@ -134,7 +136,28 @@ impl BlobStore {
         Ok(rid)
     }
 
-    /// Reads a blob's raw bytes, or `None` if it isn't stored.
+    /// Largest stored value kept in the `blob` row itself.
+    fn inline_max(&self) -> usize {
+        self.conn.max_value_len().saturating_sub(ROW_OVERHEAD)
+    }
+
+    /// Opens a streaming reader over a blob, or `None` if it isn't stored.
+    /// Memory use is bounded by the connection's value limit, not by the
+    /// blob's size.
+    pub fn reader(&self, hash: &ArtifactHash) -> CasResult<Option<BlobReader>> {
+        BlobReader::open(self, hash)
+    }
+
+    /// Starts writing a blob incrementally. Memory use is bounded by the
+    /// connection's value limit, not by the blob's size.
+    pub fn writer(&self) -> BlobWriter {
+        let inline_max = self.inline_max();
+        BlobWriter::new(self, inline_max, inline_max.clamp(1, MAX_CHUNK_LEN))
+    }
+
+    /// Reads a blob's raw bytes into memory, or `None` if it isn't stored.
+    /// Meant for small structured objects; use [`Self::reader`] for file
+    /// content.
     pub fn get(&self, hash: &ArtifactHash) -> CasResult<Option<Vec<u8>>> {
         with(self.conn.as_ref(), Access::Read, |x| self.get_in(x, hash))
     }

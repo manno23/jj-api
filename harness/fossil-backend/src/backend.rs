@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use futures::AsyncRead;
 use futures::AsyncReadExt as _;
 use futures::StreamExt as _;
-use futures::io::Cursor;
+use futures::io::AllowStdIo;
 use futures::stream;
 use futures::stream::BoxStream;
 use jj_core::backend::Backend;
@@ -293,16 +293,17 @@ impl Backend for FossilBackend {
         id: &FileId,
     ) -> BackendResult<Pin<Box<dyn AsyncRead + Send>>> {
         let hash = hash_of(id)?;
-        let data = self
+        // Stream the content so memory stays bounded for large files.
+        let reader = self
             .cas
-            .get(&hash)
+            .reader(&hash)
             .map_err(|err| BackendError::ReadFile {
                 path: path.to_owned(),
                 id: id.clone(),
                 source: err.into(),
             })?
             .ok_or_else(|| not_found(id))?;
-        Ok(Box::pin(Cursor::new(data)))
+        Ok(Box::pin(AllowStdIo::new(reader)))
     }
 
     async fn write_file(
@@ -310,12 +311,23 @@ impl Backend for FossilBackend {
         _path: &RepoPath,
         contents: &mut (dyn AsyncRead + Send + Unpin),
     ) -> BackendResult<FileId> {
-        let mut data = Vec::new();
-        contents
-            .read_to_end(&mut data)
-            .await
-            .map_err(|err| write_err("file", err))?;
-        let (_, hash) = self.cas.put(&data).map_err(|err| write_err("file", err))?;
+        // Hash and store incrementally so memory stays bounded for large
+        // files.
+        let mut writer = self.cas.writer();
+        let mut buf = vec![0; 1 << 16];
+        loop {
+            let n = contents
+                .read(&mut buf)
+                .await
+                .map_err(|err| write_err("file", err))?;
+            if n == 0 {
+                break;
+            }
+            writer
+                .write(&buf[..n])
+                .map_err(|err| write_err("file", err))?;
+        }
+        let (_, hash) = writer.finish().map_err(|err| write_err("file", err))?;
         Ok(FileId::new(hash.0.to_vec()))
     }
 

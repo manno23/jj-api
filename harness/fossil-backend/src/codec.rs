@@ -137,6 +137,10 @@ pub enum DecodeError {
     /// A merge had an even number of terms.
     #[error("merge with an even number of terms ({0})")]
     EvenMerge(usize),
+    /// Conflict labels that encoding would have normalised away (labels on
+    /// a resolved merge, or all-empty labels).
+    #[error("non-canonical conflict labels")]
+    Labels,
     /// Bytes followed the encoded object.
     #[error("trailing bytes")]
     Trailing,
@@ -451,7 +455,7 @@ pub fn decode_commit(buf: &[u8]) -> Result<Commit, DecodeError> {
         let normalized = ConflictLabels::from_merge(merge.clone()).into_merge();
         // Normalisation must be a no-op on canonical input.
         if normalized != merge {
-            return Err(DecodeError::Trailing);
+            return Err(DecodeError::Labels);
         }
         merge
     };
@@ -687,6 +691,69 @@ mod tests {
         w.len(0);
         w.ids([&[1u8; 32][..], &[2u8; 32][..]].into_iter());
         assert_eq!(decode_commit(&w.0), Err(DecodeError::EvenMerge(2)));
+    }
+
+    #[test]
+    fn rejects_non_canonical_labels() {
+        let encode_with_labels = |root_trees: usize, labels: &[&str]| {
+            let mut w = Writer::new(Kind::Commit);
+            w.len(0); // parents
+            w.len(0); // predecessors
+            w.len(root_trees);
+            for i in 0..root_trees {
+                w.bytes(&[u8::try_from(i).unwrap(); 32]);
+            }
+            w.len(labels.len());
+            for label in labels {
+                w.str(label);
+            }
+            w.bytes(&[0; 16]);
+            w.str("");
+            for _ in 0..2 {
+                w.signature(&sig("x", 0, 0));
+            }
+            w.0
+        };
+        // Canonical: no labels, or a full set on a conflict.
+        assert!(decode_commit(&encode_with_labels(1, &[])).is_ok());
+        assert!(decode_commit(&encode_with_labels(3, &["a", "b", "c"])).is_ok());
+        // A label on a resolved tree.
+        assert_eq!(
+            decode_commit(&encode_with_labels(1, &["stray"])),
+            Err(DecodeError::Labels)
+        );
+        // All-empty labels on a conflict.
+        assert_eq!(
+            decode_commit(&encode_with_labels(3, &["", "", ""])),
+            Err(DecodeError::Labels)
+        );
+        // An even number of labels.
+        assert_eq!(
+            decode_commit(&encode_with_labels(3, &["a", "b"])),
+            Err(DecodeError::EvenMerge(2))
+        );
+    }
+
+    #[test]
+    fn rejects_bad_bools_tags_and_utf8() {
+        let tree = encode_tree(&sample_tree());
+        // The first entry is `a.txt`, a file: find its executable flag (1).
+        let exec_pos = 5 + 1 + 1 + 5 + 1 + 1 + 32;
+        assert_eq!(tree[exec_pos], 1);
+        let mut bad_bool = tree.clone();
+        bad_bool[exec_pos] = 2;
+        assert_eq!(decode_tree(&bad_bool), Err(DecodeError::Bool(2)));
+        let tag_pos = 5 + 1 + 1 + 5;
+        let mut bad_tag = tree.clone();
+        bad_tag[tag_pos] = 9;
+        assert_eq!(decode_tree(&bad_tag), Err(DecodeError::Tag(9)));
+        let mut bad_utf8 = tree;
+        bad_utf8[5 + 1 + 1] = 0xff;
+        assert_eq!(decode_tree(&bad_utf8), Err(DecodeError::Utf8));
+        // An unknown version.
+        let mut future = empty_tree_bytes();
+        future[4] = 2;
+        assert_eq!(decode_tree(&future), Err(DecodeError::Version(2)));
     }
 
     #[test]

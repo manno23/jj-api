@@ -449,3 +449,117 @@ fn commit_id_is_pinned() {
         "9ae94ce857d89ef2fdd52783d527dad22dbda459b29a57d3305944226e038b10"
     );
 }
+
+#[test]
+fn large_files_stream_through_chunks() {
+    // A small value limit, as on a Durable Object, forces chunking.
+    let conn: Arc<dyn SqlConn> = Arc::new(
+        RusqliteConn::open_in_memory()
+            .unwrap()
+            .with_max_value_len(4096),
+    );
+    let backend = FossilBackend::init(conn).unwrap();
+    let mut state: u32 = 7;
+    let data: Vec<u8> = (0..100_000)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state as u8
+        })
+        .collect();
+    let id = write_file(&backend, &data);
+    assert_eq!(id.as_bytes(), ArtifactHash::of(&data).as_bytes());
+    let mut out = vec![];
+    backend
+        .read_file(RepoPath::root(), &id)
+        .block_on()
+        .unwrap()
+        .read_to_end(&mut out)
+        .block_on()
+        .unwrap();
+    assert_eq!(out, data);
+    // Writing the same content again dedupes to the same blob.
+    assert_eq!(write_file(&backend, &data), id);
+}
+
+/// Children come before parents, and the order doesn't depend on which copy
+/// the walk starts from.
+#[test]
+fn related_copies_order_is_deterministic() {
+    let backend = backend();
+    let root = backend
+        .write_copy(&copy_history("root", &[]))
+        .block_on()
+        .unwrap();
+    let left = backend
+        .write_copy(&copy_history("left", std::slice::from_ref(&root)))
+        .block_on()
+        .unwrap();
+    let right = backend
+        .write_copy(&copy_history("right", std::slice::from_ref(&root)))
+        .block_on()
+        .unwrap();
+    let merged = backend
+        .write_copy(&copy_history("merged", &[left.clone(), right.clone()]))
+        .block_on()
+        .unwrap();
+    let orders: Vec<Vec<CopyId>> = [&root, &left, &right, &merged]
+        .into_iter()
+        .map(|id| {
+            backend
+                .get_related_copies(id)
+                .block_on()
+                .unwrap()
+                .into_iter()
+                .map(|related| related.id)
+                .collect()
+        })
+        .collect();
+    for order in &orders {
+        assert_eq!(order, &orders[0]);
+        let pos = |id: &CopyId| order.iter().position(|x| x == id).unwrap();
+        assert!(pos(&merged) < pos(&left) && pos(&merged) < pos(&right));
+        assert!(pos(&left) < pos(&root) && pos(&right) < pos(&root));
+    }
+    assert_eq!(orders[0].len(), 4);
+}
+
+#[test]
+fn related_copies_survive_cyclic_edges() {
+    let backend = backend();
+    let a = backend
+        .write_copy(&copy_history("a", &[]))
+        .block_on()
+        .unwrap();
+    let b = backend
+        .write_copy(&copy_history("b", std::slice::from_ref(&a)))
+        .block_on()
+        .unwrap();
+    // Corrupt the edge index with a cycle (b -> a -> b). The walk must still
+    // terminate, and ordering follows the copies' own parent lists.
+    let conn = backend.blob_store().conn().clone();
+    jj_fossil_cas::sql::with(conn.as_ref(), jj_fossil_cas::sql::Access::Write, |x| {
+        x.exec(
+            "INSERT INTO jj_copy_edge(child, parent) \
+             SELECT pa.rid, ch.rid FROM blob pa, blob ch WHERE pa.uuid = ? AND ch.uuid = ?",
+            &[
+                jj_fossil_cas::sql::Param::Text(
+                    &ArtifactHash::from_slice(a.as_bytes()).unwrap().to_uuid(),
+                ),
+                jj_fossil_cas::sql::Param::Text(
+                    &ArtifactHash::from_slice(b.as_bytes()).unwrap().to_uuid(),
+                ),
+            ],
+        )
+    })
+    .unwrap();
+    let ids: Vec<CopyId> = backend
+        .get_related_copies(&a)
+        .block_on()
+        .unwrap()
+        .into_iter()
+        .map(|related| related.id)
+        .collect();
+    assert_eq!(ids, vec![b, a]);
+}
