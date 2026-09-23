@@ -389,6 +389,30 @@ fn io_to_write_error(err: PathError, object_type: &'static str) -> OpStoreError 
     }
 }
 
+/// Serializes a view in the simple op store's protobuf format, so other op
+/// stores can share the format.
+pub fn encode_view(view: &View) -> Vec<u8> {
+    view_to_proto(view).encode_to_vec()
+}
+
+/// Deserializes a view written by [`encode_view`].
+pub fn decode_view(buf: &[u8]) -> Result<View, Box<dyn std::error::Error + Send + Sync>> {
+    let proto = crate::protos::simple_op_store::View::decode(buf)?;
+    Ok(view_from_proto(proto)?)
+}
+
+/// Serializes an operation in the simple op store's protobuf format, so other
+/// op stores can share the format.
+pub fn encode_operation(operation: &Operation) -> Vec<u8> {
+    operation_to_proto(operation).encode_to_vec()
+}
+
+/// Deserializes an operation written by [`encode_operation`].
+pub fn decode_operation(buf: &[u8]) -> Result<Operation, Box<dyn std::error::Error + Send + Sync>> {
+    let proto = crate::protos::simple_op_store::Operation::decode(buf)?;
+    Ok(operation_from_proto(proto)?)
+}
+
 #[derive(Debug, Error)]
 enum PostDecodeError {
     #[error("Invalid hash length (expected {expected} bytes, got {actual} bytes)")]

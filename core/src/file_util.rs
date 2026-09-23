@@ -460,6 +460,45 @@ mod platform {
     }
 }
 
+/// Platform shims for targets without a native filesystem notion of symlinks
+/// or file identity, such as `wasm32-unknown-unknown`.
+#[cfg(not(any(unix, windows)))]
+mod platform {
+    use std::fs::File;
+    use std::io;
+    use std::path::Path;
+
+    pub use super::fallback::BadOsStrEncoding;
+    pub use super::fallback::os_str_from_bytes;
+    pub use super::fallback::os_str_to_bytes;
+
+    /// Symlinks are not supported on this platform.
+    pub fn check_symlink_support() -> io::Result<bool> {
+        Ok(false)
+    }
+
+    /// Always fails: symlinks are not supported on this platform.
+    pub fn symlink_dir<P: AsRef<Path>, Q: AsRef<Path>>(_original: P, _link: Q) -> io::Result<()> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+
+    /// Always fails: symlinks are not supported on this platform.
+    pub fn symlink_file<P: AsRef<Path>, Q: AsRef<Path>>(_original: P, _link: Q) -> io::Result<()> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+    pub enum FileIdentity {}
+
+    pub fn file_identity_from_symlink_path(_path: &Path) -> io::Result<FileIdentity> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+
+    pub fn file_identity_from_file(_file: File) -> io::Result<FileIdentity> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+}
+
 #[cfg_attr(unix, expect(dead_code))]
 mod fallback {
     use std::ffi::OsStr;
