@@ -231,10 +231,17 @@ This crate depends on `jj-lib`.
 ## 7. Next phases
 
 1. **jj-lib wasm port:**
-   - a `lock/` fallback;
-   - no `rayon` or `gix` on wasm;
-   - an `IndexStore` backed by SQL or memory;
-   - repo assembly through `RepoLoader::new` instead of filesystem paths.
+   - ~~a `lock/` fallback~~ — done: `lib/src/lock/wasm.rs`, plus `rand`'s
+     `getrandom` needing the `wasm_js` backend. `jj-lib --no-default-features`
+     now builds clean for `wasm32-unknown-unknown`; its native test suite is
+     unaffected. `rayon` and `gix` were never a *build*-time problem (`gix` is
+     already optional and off; `rayon` compiles for wasm32) — `rayon`'s thread
+     pool is a *runtime* risk on a target with no real threads, still open;
+   - an `IndexStore` backed by SQL or memory (`DefaultIndexStore` still writes
+     segment files to a real filesystem);
+   - repo assembly through `RepoLoader::new` instead of filesystem paths
+     (`ReadonlyRepo::init`/`Workspace::init_with_factories` still call
+     `std::fs` directly, regardless of which stores are passed in).
 2. **`SqlWorkingCopy`:**
    - `wc_file(workspace, path, rid, exec, symlink, mtime)`;
    - snapshot in O(dirty set);
