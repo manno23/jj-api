@@ -1,0 +1,26 @@
+[package]
+name = "jj-fossil-stores"
+description = "jj operation, workspace and index stores sharing the Fossil-style SQLite database"
+publish = false
+
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+async-trait = { workspace = true }
+jj-fossil-backend = { workspace = true, features = ["rusqlite"] }
+jj-fossil-cas = { workspace = true, features = ["rusqlite"] }
+jj-lib = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+pollster = { workspace = true }
+tempfile = { workspace = true }
+testutils = { workspace = true }
+
+[lints]
+workspace = true

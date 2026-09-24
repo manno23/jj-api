@@ -71,6 +71,7 @@ fn to_owned_path_vec(paths: &[&RepoPath]) -> Vec<RepoPathBuf> {
 }
 
 #[test_case(TestRepoBackend::Simple ; "simple backend")]
+#[test_case(TestRepoBackend::Fossil ; "fossil backend")]
 #[test_case(TestRepoBackend::Git ; "git backend")]
 fn test_initial(backend: TestRepoBackend) -> TestResult {
     let test_repo = TestRepo::init_with_backend(backend);
@@ -139,6 +140,7 @@ fn test_initial(backend: TestRepoBackend) -> TestResult {
 }
 
 #[test_case(TestRepoBackend::Simple ; "simple backend")]
+#[test_case(TestRepoBackend::Fossil ; "fossil backend")]
 #[test_case(TestRepoBackend::Git ; "git backend")]
 fn test_rewrite(backend: TestRepoBackend) -> TestResult {
     let settings = testutils::user_settings();
@@ -234,6 +236,7 @@ fn test_rewrite(backend: TestRepoBackend) -> TestResult {
 
 // An author field with an empty name/email should get filled in on rewrite
 #[test_case(TestRepoBackend::Simple ; "simple backend")]
+#[test_case(TestRepoBackend::Fossil ; "fossil backend")]
 #[test_case(TestRepoBackend::Git ; "git backend")]
 fn test_rewrite_update_missing_user(backend: TestRepoBackend) -> TestResult {
     let missing_user_settings = UserSettings::from_config(StackedConfig::with_defaults())?;
@@ -283,6 +286,7 @@ fn test_rewrite_update_missing_user(backend: TestRepoBackend) -> TestResult {
 }
 
 #[test_case(TestRepoBackend::Simple ; "simple backend")]
+#[test_case(TestRepoBackend::Fossil ; "fossil backend")]
 #[test_case(TestRepoBackend::Git ; "git backend")]
 fn test_rewrite_resets_author_timestamp(backend: TestRepoBackend) -> TestResult {
     let test_repo = TestRepo::init_with_backend(backend);
@@ -353,6 +357,7 @@ fn test_rewrite_resets_author_timestamp(backend: TestRepoBackend) -> TestResult 
 }
 
 #[test_case(TestRepoBackend::Simple ; "simple backend")]
+#[test_case(TestRepoBackend::Fossil ; "fossil backend")]
 #[test_case(TestRepoBackend::Git ; "git backend")]
 fn test_rewrite_to_identical_commit(backend: TestRepoBackend) -> TestResult {
     let timestamp = "2001-02-03T04:05:06+07:00";
@@ -404,6 +409,7 @@ fn test_rewrite_to_identical_commit(backend: TestRepoBackend) -> TestResult {
 }
 
 #[test_case(TestRepoBackend::Simple ; "simple backend")]
+#[test_case(TestRepoBackend::Fossil ; "fossil backend")]
 // #[test_case(TestRepoBackend::Git ; "git backend")]
 fn test_commit_builder_descendants(backend: TestRepoBackend) -> TestResult {
     let test_repo = TestRepo::init_with_backend(backend);

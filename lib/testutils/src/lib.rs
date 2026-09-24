@@ -27,6 +27,7 @@ use std::sync::Arc;
 
 use futures::AsyncReadExt as _;
 use itertools::Itertools as _;
+use jj_fossil_backend::FossilBackend;
 use jj_lib::backend;
 use jj_lib::backend::Backend;
 use jj_lib::backend::BackendInitError;
@@ -207,6 +208,10 @@ impl TestEnvironment {
             Box::new(move |_settings, store_path| Ok(Box::new(factory.load(store_path))))
         });
         factories.add_backend(
+            FossilBackend::NAME,
+            Box::new(|_settings, store_path| Ok(Box::new(FossilBackend::load_at(store_path)?))),
+        );
+        factories.add_backend(
             SecretBackend::NAME,
             Box::new(|settings, store_path| {
                 Ok(Box::new(SecretBackend::load(settings, store_path)?))
@@ -239,6 +244,7 @@ pub enum TestRepoBackend {
     Git,
     Simple,
     Test,
+    Fossil,
 }
 
 impl TestRepoBackend {
@@ -256,6 +262,7 @@ impl TestRepoBackend {
             )?)),
             Self::Simple => Ok(Box::new(SimpleBackend::init(store_path))),
             Self::Test => Ok(Box::new(env.test_backend_factory.init(store_path))),
+            Self::Fossil => Ok(Box::new(FossilBackend::init_at(store_path)?)),
         }
     }
 }

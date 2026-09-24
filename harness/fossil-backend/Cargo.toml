@@ -1,0 +1,28 @@
+[package]
+name = "jj-fossil-backend"
+description = "A jj commit backend over the Fossil-style SQLite blob store"
+publish = false
+
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+async-trait = { workspace = true }
+futures = { workspace = true }
+jj-core = { workspace = true }
+jj-fossil-cas = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+pollster = { workspace = true }
+
+[features]
+default = ["rusqlite"]
+rusqlite = ["jj-fossil-cas/rusqlite"]
+
+[lints]
+workspace = true

@@ -102,6 +102,8 @@ fn merge_directories(left: &Path, base: &Path, right: &Path, output: &Path) {
     }
 }
 
+// Not run with the fossil backend: its single database file cannot be merged
+// file-by-file the way this test simulates syncing.
 #[test_case(TestRepoBackend::Simple; "simple backend")]
 #[test_case(TestRepoBackend::Git; "git backend")]
 fn test_bad_locking_children(backend: TestRepoBackend) -> TestResult {
@@ -164,6 +166,7 @@ fn test_bad_locking_children(backend: TestRepoBackend) -> TestResult {
 }
 
 #[test_case(TestRepoBackend::Simple ; "simple backend")]
+#[test_case(TestRepoBackend::Fossil ; "fossil backend")]
 #[test_case(TestRepoBackend::Git ; "git backend")]
 fn test_bad_locking_interrupted(backend: TestRepoBackend) -> TestResult {
     // Test that an interrupted update of the op-heads resulting in on op-head
