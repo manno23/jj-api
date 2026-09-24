@@ -541,8 +541,8 @@ fn related_copies_survive_cyclic_edges() {
     let conn = backend.blob_store().conn().clone();
     jj_fossil_cas::sql::with(conn.as_ref(), jj_fossil_cas::sql::Access::Write, |x| {
         x.exec(
-            "INSERT INTO jj_copy_edge(child, parent) \
-             SELECT pa.rid, ch.rid FROM blob pa, blob ch WHERE pa.uuid = ? AND ch.uuid = ?",
+            "INSERT INTO jj_copy_edge(child, parent) SELECT pa.rid, ch.rid FROM blob pa, blob ch \
+             WHERE pa.uuid = ? AND ch.uuid = ?",
             &[
                 jj_fossil_cas::sql::Param::Text(
                     &ArtifactHash::from_slice(a.as_bytes()).unwrap().to_uuid(),
