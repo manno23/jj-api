@@ -35,6 +35,7 @@ use crate::hash::ArtifactHash;
 use crate::sql::Access;
 use crate::sql::Param;
 use crate::sql::SqlError;
+use crate::sql::SqlExec;
 use crate::sql::with;
 use crate::store::BlobStore;
 use crate::store::CasError;
@@ -196,33 +197,79 @@ impl BlobWriter {
     }
 
     /// Appends bytes to the blob.
+    ///
+    /// However large `data` is, the memory this call holds is bounded by
+    /// `chunk_len` (once spilling) or `inline_max` (before that): `data` is
+    /// processed in pieces of at most `chunk_len` bytes, and every complete
+    /// chunk is flushed to storage before the next piece is buffered. A
+    /// caller that already reads its source in small pieces (as
+    /// `FossilBackend::write_file` does) sees no extra flushes from this;
+    /// this only matters for a caller that passes one large `data` argument.
     pub fn write(&mut self, data: &[u8]) -> CasResult<()> {
         self.hasher.update(data);
-        self.buf.extend_from_slice(data);
-        if self.spill.is_none() && self.buf.len() > self.inline_max {
-            // Too big for one value: stream the rest out as raw chunks under
-            // a provisional name, renamed once the hash is known.
-            let row = with(self.store.conn().as_ref(), Access::Write, |x| {
-                x.query_row(
-                    "INSERT INTO blob(uuid, size, enc, content) \
-                     VALUES ('~' || lower(hex(randomblob(32))), 0, ?, NULL) RETURNING rid",
-                    &[Param::Int(Encoding::Raw as i64)],
-                )
-            })?
-            .ok_or_else(|| SqlError("INSERT … RETURNING returned no row".to_owned()))?;
-            self.spill = Some(Spill {
-                rid: row.int(0)?,
-                next_seq: 0,
-                len: 0,
-            });
-        }
-        if let Some(spill) = &mut self.spill {
-            while self.buf.len() >= self.chunk_len {
-                write_chunk(&self.store, spill, &self.buf[..self.chunk_len])?;
-                self.buf.drain(..self.chunk_len);
-            }
+        for piece in data.chunks(self.chunk_len) {
+            self.buf.extend_from_slice(piece);
+            self.start_spill_if_needed()?;
+            self.flush_full_chunks()?;
         }
         Ok(())
+    }
+
+    /// Switches to chunked storage under a provisional name once the
+    /// buffered content outgrows one SQL value.
+    fn start_spill_if_needed(&mut self) -> CasResult<()> {
+        if self.spill.is_some() || self.buf.len() <= self.inline_max {
+            return Ok(());
+        }
+        // Too big for one value: stream the rest out as raw chunks under a
+        // provisional name, renamed once the hash is known. Chunks are not
+        // compressed: compressing would mean buffering enough to tell
+        // whether it pays off, which is exactly the unbounded memory this
+        // streaming path exists to avoid. (An in-memory `put()` of the same
+        // bytes may still store them inline and compressed; both converge on
+        // the same content-addressed `rid` regardless.)
+        let row = with(self.store.conn().as_ref(), Access::Write, |x| {
+            x.query_row(
+                "INSERT INTO blob(uuid, size, enc, content) \
+                 VALUES ('~' || lower(hex(randomblob(32))), 0, ?, NULL) RETURNING rid",
+                &[Param::Int(Encoding::Raw as i64)],
+            )
+        })?
+        .ok_or_else(|| SqlError("INSERT … RETURNING returned no row".to_owned()))?;
+        self.spill = Some(Spill {
+            rid: row.int(0)?,
+            next_seq: 0,
+            len: 0,
+        });
+        Ok(())
+    }
+
+    /// Writes out every full chunk currently buffered. A no-op before
+    /// spilling starts, and while less than one chunk is buffered.
+    ///
+    /// Each flush is its own transaction, so a write spanning N chunks costs
+    /// N round trips rather than one: batching further would mean holding
+    /// more than `chunk_len` bytes (and more than one transaction's worth of
+    /// chunks) in memory at once, which would reintroduce the unbounded
+    /// memory use `write` exists to avoid. On a Durable Object, where
+    /// `Access::Write` is one `transactionSync` call, this trades round
+    /// trips for a memory bound fixed by `max_value_len` rather than by the
+    /// size of what's being written.
+    fn flush_full_chunks(&mut self) -> CasResult<()> {
+        if self.spill.is_none() || self.buf.len() < self.chunk_len {
+            return Ok(());
+        }
+        let chunk_len = self.chunk_len;
+        let store = self.store.clone();
+        let buf = &mut self.buf;
+        let spill = self.spill.as_mut().expect("checked above");
+        with(store.conn().as_ref(), Access::Write, |x| {
+            while buf.len() >= chunk_len {
+                write_chunk_in(x, spill, &buf[..chunk_len])?;
+                buf.drain(..chunk_len);
+            }
+            Ok::<_, CasError>(())
+        })
     }
 
     /// Stores the blob and returns its row id and hash. Idempotent like
@@ -235,11 +282,17 @@ impl BlobWriter {
             })?;
             return Ok((rid, hash));
         };
-        if !self.buf.is_empty() {
-            write_chunk(&self.store, &mut spill, &self.buf)?;
-        }
+        // The trailing partial chunk (always < chunk_len, so bounded) and
+        // the rename-or-dedup step are one transaction: unlike the flush
+        // loop above, there is only ever one more chunk left to write here,
+        // so batching costs nothing in memory.
         let uuid = hash.to_uuid();
-        let rid = with(self.store.conn().as_ref(), Access::Write, |x| {
+        let store = self.store.clone();
+        let tail = self.buf;
+        let rid = with(store.conn().as_ref(), Access::Write, |x| {
+            if !tail.is_empty() {
+                write_chunk_in(x, &mut spill, &tail)?;
+            }
             if let Some(existing) = rid_in(x, &uuid)? {
                 // Already stored: drop the provisional copy.
                 x.exec(
@@ -263,17 +316,15 @@ impl BlobWriter {
     }
 }
 
-fn write_chunk(store: &BlobStore, spill: &mut Spill, data: &[u8]) -> CasResult<()> {
-    with(store.conn().as_ref(), Access::Write, |x| {
-        x.exec(
-            "INSERT INTO jj_chunk(rid, seq, data) VALUES (?, ?, ?)",
-            &[
-                Param::Int(spill.rid),
-                Param::Int(spill.next_seq),
-                Param::Blob(data),
-            ],
-        )
-    })?;
+fn write_chunk_in(x: &dyn SqlExec, spill: &mut Spill, data: &[u8]) -> CasResult<()> {
+    x.exec(
+        "INSERT INTO jj_chunk(rid, seq, data) VALUES (?, ?, ?)",
+        &[
+            Param::Int(spill.rid),
+            Param::Int(spill.next_seq),
+            Param::Blob(data),
+        ],
+    )?;
     spill.next_seq += 1;
     spill.len += i64::try_from(data.len()).expect("chunk size fits in i64");
     Ok(())
@@ -344,6 +395,29 @@ mod tests {
         assert_eq!(count(&s, "SELECT size FROM blob"), 1000);
         assert_eq!(read_all(&s, &hash), data);
         assert_eq!(s.get(&hash).unwrap().unwrap(), data);
+    }
+
+    #[test]
+    fn writer_bounds_memory_for_a_single_large_write_call() {
+        // A single `write()` call spanning many chunks must still flush
+        // incrementally rather than buffering everything it is handed.
+        let s = store(ROW_OVERHEAD + 64);
+        let data = noise(10_000);
+        let mut writer = s.writer();
+        writer.write(&data).unwrap(); // one call, not split by the caller
+        let (rid, hash) = writer.finish().unwrap();
+        assert_eq!(hash, ArtifactHash::of(&data));
+        let nchunks = with(s.conn().as_ref(), Access::Read, |x| {
+            x.query_row(
+                "SELECT count(*) FROM jj_chunk WHERE rid = ?",
+                &[Param::Int(rid)],
+            )?
+            .unwrap()
+            .int(0)
+        })
+        .unwrap();
+        assert!(nchunks > 1);
+        assert_eq!(read_all(&s, &hash), data);
     }
 
     #[test]

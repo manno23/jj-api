@@ -331,12 +331,24 @@ mod native {
                 Access::Write => {
                     conn.execute_batch("BEGIN IMMEDIATE")?;
                     match f(&exec) {
-                        Ok(()) => {
-                            conn.execute_batch("COMMIT")?;
-                            Ok(())
-                        }
+                        Ok(()) => match conn.execute_batch("COMMIT") {
+                            Ok(()) => Ok(()),
+                            Err(err) => {
+                                // A failed COMMIT (disk full, an I/O error) can
+                                // leave the transaction open. Best-effort: try
+                                // to leave the connection outside of one, so a
+                                // later write doesn't fail with "cannot start
+                                // a transaction within a transaction".
+                                drop(conn.execute_batch("ROLLBACK"));
+                                Err(err.into())
+                            }
+                        },
                         Err(err) => {
-                            conn.execute_batch("ROLLBACK")?;
+                            // Same best-effort spirit: a ROLLBACK failure here
+                            // is secondary to the callback's own error, which
+                            // is more useful to the caller and shouldn't be
+                            // masked by it.
+                            drop(conn.execute_batch("ROLLBACK"));
                             Err(err)
                         }
                     }
