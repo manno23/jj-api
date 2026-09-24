@@ -331,8 +331,11 @@ jobs:
                  "This is within the allowed limit of ${TOTAL_DEP_LIMIT}."
           fi
         env:
-          # This limit *can* be raised, we just want to be aware if we exceed it
-          TOTAL_DEP_LIMIT: 550
+          # This limit *can* be raised, we just want to be aware if we exceed it.
+          # Raised from 550 to 600 for the harness/ crates (jj-fossil-cas,
+          # jj-fossil-backend, jj-fossil-stores) and rusqlite's bundled SQLite,
+          # which pulls in its own small dependency chain (cc, pkg-config, ...).
+          TOTAL_DEP_LIMIT: 600
 
   # Block the merge if required checks fail, but only in the merge
   # queue. See also `required-checks-hack.yml`.
