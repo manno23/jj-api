@@ -289,7 +289,7 @@ fn conflicted_commit_round_trip() {
 fn write_commit_returns_what_read_commit_returns() {
     let backend = backend();
     let mut c = commit(&backend, vec![backend.root_commit_id().clone()]);
-    // Resolved tree with a non-empty label is normalised away.
+    // Resolved tree with a non-empty label is normalized away.
     c.conflict_labels = Merge::resolved("stray".to_owned());
     let (id, returned) = backend.write_commit(c, None).block_on().unwrap();
     assert_eq!(returned.conflict_labels, Merge::resolved(String::new()));

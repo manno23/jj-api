@@ -33,7 +33,7 @@
 //! | Kind | Body, in order |
 //! |------|----------------|
 //! | `T` tree | `uv(n)`, then per entry: `str name`, `u8 tag`, payload. Tags: `0` file (`bytes id`, `bool executable`, `bytes copy_id`), `1` symlink (`bytes id`), `2` tree (`bytes id`), `3` git submodule (`bytes id`). Names strictly increasing. |
-//! | `C` commit | `uv(n) bytes*` parents; `uv(n) bytes*` predecessors; `uv(n) bytes*` root tree terms (n odd); `uv(n) str*` conflict labels (n = 0 or odd; normalised with [`ConflictLabels::from_merge`]); `bytes` change id; `str` description; author and committer, each `str name`, `str email`, `sv millis`, `sv tz_offset`. |
+//! | `C` commit | `uv(n) bytes*` parents; `uv(n) bytes*` predecessors; `uv(n) bytes*` root tree terms (n odd); `uv(n) str*` conflict labels (n = 0 or odd; normalized with [`ConflictLabels::from_merge`]); `bytes` change id; `str` description; author and committer, each `str name`, `str email`, `sv millis`, `sv tz_offset`. |
 //! | `Y` copy | `str current_path`; `uv(n) bytes*` parents; `bytes salt`. |
 //!
 //! A signed commit is the unsigned encoding followed by `53 ('S') ‖ bytes
@@ -137,7 +137,7 @@ pub enum DecodeError {
     /// A merge had an even number of terms.
     #[error("merge with an even number of terms ({0})")]
     EvenMerge(usize),
-    /// Conflict labels that encoding would have normalised away (labels on
+    /// Conflict labels that encoding would have normalized away (labels on
     /// a resolved merge, or all-empty labels).
     #[error("non-canonical conflict labels")]
     Labels,
@@ -453,7 +453,7 @@ pub fn decode_commit(buf: &[u8]) -> Result<Commit, DecodeError> {
     } else {
         let merge = odd_merge(labels)?;
         let normalized = ConflictLabels::from_merge(merge.clone()).into_merge();
-        // Normalisation must be a no-op on canonical input.
+        // Normalization must be a no-op on canonical input.
         if normalized != merge {
             return Err(DecodeError::Labels);
         }

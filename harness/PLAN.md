@@ -124,8 +124,8 @@ This crate implements `jj_core::backend::Backend` and depends only on
   - The codec is strict and bijective. Every ID is length-prefixed.
   - Decoding rejects an even number of merge terms, unsorted tree entries,
     non-minimal varints and trailing bytes.
-  - Labels are normalised with `ConflictLabels::from_merge` on encode.
-    Decoding rejects anything that normalisation would change (a label on a
+  - Labels are normalized with `ConflictLabels::from_merge` on encode.
+    Decoding rejects anything that normalization would change (a label on a
     resolved tree, or all-empty labels): `DecodeError::Labels`.
   - A signed commit is stored as `unsigned ‖ 'S' ‖ bytes(sig)`.
     `secure_sig.data` is exactly the unsigned prefix.
@@ -143,7 +143,7 @@ This crate implements `jj_core::backend::Backend` and depends only on
   - The order is deterministic whatever order SQL returns rows in:
     1. results go into a map;
     2. the walk starts from the **sorted** ids;
-    3. neighbours are each copy's stored `parents` list, which is part of its
+    3. neighbors are each copy's stored `parents` list, which is part of its
        content.
   - A missing ID or a cycle is an error, never a panic.
 - **Tests cover every decoder rule with a negative fixture:** bad magic,
@@ -218,7 +218,7 @@ This crate depends on `jj-lib`.
   - `test_bad_locking_children` is excluded because it merges repo
     directories file by file, which a single database can't support.
 - The acceptance test is `fossil-stores/tests/reload.rs`. It:
-  1. initialises a repo, commits, and rebases into a conflict;
+  1. initializes a repo, commits, and rebases into a conflict;
   2. checks that nothing but `type` markers and `fossil.sqlite` exists
      outside the index cache;
   3. deletes the index;

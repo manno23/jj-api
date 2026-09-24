@@ -166,7 +166,7 @@ impl FossilBackend {
     /// File name of the database inside a jj repo directory.
     pub const DB_FILE: &str = "fossil.sqlite";
 
-    /// Initialises the backend's tables in `conn` and writes the empty tree.
+    /// Initializes the backend's tables in `conn` and writes the empty tree.
     pub fn init(conn: Arc<dyn SqlConn>) -> Result<Self, BackendInitError> {
         let backend = Self::open(conn).map_err(|err| BackendInitError(err.into()))?;
         let (_, hash) = backend
@@ -402,9 +402,9 @@ impl Backend for FossilBackend {
             let rows = x
                 .query(
                     "WITH RECURSIVE \
-                       anc(rid) AS (SELECT ? UNION \
-                         SELECT e.parent FROM jj_copy_edge e JOIN anc ON e.child = anc.rid), \
-                       des(rid) AS (SELECT rid FROM anc UNION \
+                       ancestors(rid) AS (SELECT ? UNION \
+                         SELECT e.parent FROM jj_copy_edge e JOIN ancestors ON e.child = ancestors.rid), \
+                       des(rid) AS (SELECT rid FROM ancestors UNION \
                          SELECT e.child FROM jj_copy_edge e JOIN des ON e.parent = des.rid) \
                      SELECT b.uuid FROM des JOIN blob b ON b.rid = des.rid",
                     &[Param::Int(rid)],
@@ -495,7 +495,7 @@ impl Backend for FossilBackend {
         let hash = self
             .write_object(Kind::Commit, &bytes)
             .map_err(|err| write_err("commit", err))?;
-        // Return exactly what `read_commit` will return (normalised labels,
+        // Return exactly what `read_commit` will return (normalized labels,
         // exact signed data).
         let stored = codec::decode_commit(&bytes).map_err(|err| write_err("commit", err))?;
         Ok((CommitId::new(hash.0.to_vec()), stored))
