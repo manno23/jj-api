@@ -289,7 +289,7 @@ fn conflicted_commit_round_trip() {
 fn write_commit_returns_what_read_commit_returns() {
     let backend = backend();
     let mut c = commit(&backend, vec![backend.root_commit_id().clone()]);
-    // Resolved tree with a non-empty label is normalised away.
+    // Resolved tree with a non-empty label is normalized away.
     c.conflict_labels = Merge::resolved("stray".to_owned());
     let (id, returned) = backend.write_commit(c, None).block_on().unwrap();
     assert_eq!(returned.conflict_labels, Merge::resolved(String::new()));
@@ -420,8 +420,13 @@ fn reload_from_disk() {
         backend.write_commit(c, None).block_on().unwrap()
     };
     assert!(dir.join(FossilBackend::DB_FILE).exists());
-    let backend = FossilBackend::load_at(&store_path).unwrap();
-    assert_eq!(backend.read_commit(&commit_id).block_on().unwrap(), written);
+    {
+        let backend = FossilBackend::load_at(&store_path).unwrap();
+        assert_eq!(backend.read_commit(&commit_id).block_on().unwrap(), written);
+    }
+    // `backend` (and the sqlite connection it holds) must be dropped before
+    // this: on Windows, unlike Unix, a file with an open handle can't be
+    // deleted.
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -541,8 +546,8 @@ fn related_copies_survive_cyclic_edges() {
     let conn = backend.blob_store().conn().clone();
     jj_fossil_cas::sql::with(conn.as_ref(), jj_fossil_cas::sql::Access::Write, |x| {
         x.exec(
-            "INSERT INTO jj_copy_edge(child, parent) \
-             SELECT pa.rid, ch.rid FROM blob pa, blob ch WHERE pa.uuid = ? AND ch.uuid = ?",
+            "INSERT INTO jj_copy_edge(child, parent) SELECT pa.rid, ch.rid FROM blob pa, blob ch \
+             WHERE pa.uuid = ? AND ch.uuid = ?",
             &[
                 jj_fossil_cas::sql::Param::Text(
                     &ArtifactHash::from_slice(a.as_bytes()).unwrap().to_uuid(),

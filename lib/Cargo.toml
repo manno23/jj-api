@@ -70,6 +70,17 @@ rustix = { workspace = true }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true }
 
+# rand (a normal dependency, not dev-only) pulls in getrandom 0.4, which on
+# wasm32 needs an explicit backend. `wasm_js` is the right one for a wasm
+# module hosted by a JS runtime (e.g. a Cloudflare Durable Object), which
+# supplies `crypto.getRandomValues`; it's wrong for a WASI target, which has
+# its own syscall-backed source and isn't a JS host, so this is scoped to
+# `wasm32-unknown-unknown` specifically (`target_os = "unknown"`), not every
+# `target_arch = "wasm32"`. This edge exists only to turn the feature on;
+# jj-lib does not call getrandom directly.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { workspace = true, features = ["wasm_js"] }
+
 [dev-dependencies]
 eyre = { workspace = true }
 indoc = { workspace = true }

@@ -342,8 +342,12 @@ mod tests {
             let s = store_with(RusqliteConn::open(&path).unwrap());
             s.put(b"persisted").unwrap().1
         };
-        let s = store_with(RusqliteConn::open(&path).unwrap());
-        assert_eq!(s.get(&hash).unwrap().unwrap(), b"persisted");
+        {
+            let s = store_with(RusqliteConn::open(&path).unwrap());
+            assert_eq!(s.get(&hash).unwrap().unwrap(), b"persisted");
+        }
+        // `s` (and the sqlite connection it holds) must be dropped before this: on
+        // Windows, unlike Unix, a file with an open handle can't be deleted.
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

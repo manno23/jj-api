@@ -165,7 +165,7 @@ fn symlink_target_convert_to_disk(path: &str) -> PathBuf {
 #[derive(Clone, Copy, Debug)]
 enum ExecChangePolicy {
     Ignore,
-    #[cfg_attr(windows, expect(dead_code))]
+    #[cfg_attr(not(unix), expect(dead_code))]
     Respect,
 }
 
@@ -185,9 +185,12 @@ impl ExecChangePolicy {
     ///
     /// On Unix we check whether executable bits are supported in the working
     /// copy to determine respect/ignorance, but we default to respect.
-    #[cfg_attr(windows, expect(unused_variables))]
+    #[cfg_attr(not(unix), expect(unused_variables))]
     fn new(exec_change_setting: ExecChangeSetting, state_path: &Path) -> Self {
-        #[cfg(windows)]
+        // Windows ignores executable bits outright, and a target with no
+        // real filesystem (e.g. wasm32, backed by `SqlWorkingCopy`) has none
+        // to check for support of, so both fall back to `Ignore` here.
+        #[cfg(not(unix))]
         return Self::Ignore;
         #[cfg(unix)]
         return match exec_change_setting {
@@ -255,11 +258,11 @@ impl ExecBit {
     }
 
     /// Load the on-disk executable bit from file metadata.
-    #[cfg_attr(windows, expect(unused_variables))]
+    #[cfg_attr(not(unix), expect(unused_variables))]
     fn new_from_disk(metadata: &Metadata) -> Self {
         #[cfg(unix)]
         return Self(metadata.permissions().mode() & 0o111 != 0);
-        #[cfg(windows)]
+        #[cfg(not(unix))]
         return Self(false);
     }
 }
@@ -269,7 +272,7 @@ impl ExecBit {
 /// On Unix, we manually set the executable bit to the previous value on-disk.
 /// This is necessary because we write all files by creating them new, so files
 /// won't preserve their permissions naturally.
-#[cfg_attr(windows, expect(unused_variables))]
+#[cfg_attr(not(unix), expect(unused_variables))]
 fn set_executable(exec_bit: ExecBit, disk_path: &Path) -> Result<(), io::Error> {
     #[cfg(unix)]
     {

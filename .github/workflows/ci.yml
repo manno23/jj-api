@@ -187,6 +187,26 @@ jobs:
           components: clippy
       - run: cargo +stable clippy --all-features --workspace --all-targets -- -D warnings
 
+  # jj-core and jj-lib are meant to build for wasm32-unknown-unknown (see
+  # harness/PLAN.md), for a wasm module hosted by a Cloudflare Durable
+  # Object. Nothing else exercises that claim, so it would regress
+  # silently without this.
+  check-wasm32:
+    name: check (wasm32-unknown-unknown)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - run: cargo check -p jj-core --target wasm32-unknown-unknown
+      - run: cargo check -p jj-lib --no-default-features --target wasm32-unknown-unknown
+      - run: cargo check -p jj-fossil-cas --no-default-features --target wasm32-unknown-unknown
+      - run: cargo check -p jj-fossil-backend --no-default-features --target wasm32-unknown-unknown
+
   check-cargo-deny:
     runs-on: ubuntu-24.04
     strategy:
@@ -331,8 +351,11 @@ jobs:
                  "This is within the allowed limit of ${TOTAL_DEP_LIMIT}."
           fi
         env:
-          # This limit *can* be raised, we just want to be aware if we exceed it
-          TOTAL_DEP_LIMIT: 550
+          # This limit *can* be raised, we just want to be aware if we exceed it.
+          # Raised from 550 to 600 for the harness/ crates (jj-fossil-cas,
+          # jj-fossil-backend, jj-fossil-stores) and rusqlite's bundled SQLite,
+          # which pulls in its own small dependency chain (cc, pkg-config, ...).
+          TOTAL_DEP_LIMIT: 600
 
   # Block the merge if required checks fail, but only in the merge
   # queue. See also `required-checks-hack.yml`.
@@ -346,6 +369,7 @@ jobs:
     - check-protos
     - check-rustfmt
     - check-clippy
+    - check-wasm32
     - check-cargo-deny
     - check-codespell
     - check-doctests

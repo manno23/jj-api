@@ -124,8 +124,8 @@ This crate implements `jj_core::backend::Backend` and depends only on
   - The codec is strict and bijective. Every ID is length-prefixed.
   - Decoding rejects an even number of merge terms, unsorted tree entries,
     non-minimal varints and trailing bytes.
-  - Labels are normalised with `ConflictLabels::from_merge` on encode.
-    Decoding rejects anything that normalisation would change (a label on a
+  - Labels are normalized with `ConflictLabels::from_merge` on encode.
+    Decoding rejects anything that normalization would change (a label on a
     resolved tree, or all-empty labels): `DecodeError::Labels`.
   - A signed commit is stored as `unsigned ‖ 'S' ‖ bytes(sig)`.
     `secure_sig.data` is exactly the unsigned prefix.
@@ -143,7 +143,7 @@ This crate implements `jj_core::backend::Backend` and depends only on
   - The order is deterministic whatever order SQL returns rows in:
     1. results go into a map;
     2. the walk starts from the **sorted** ids;
-    3. neighbours are each copy's stored `parents` list, which is part of its
+    3. neighbors are each copy's stored `parents` list, which is part of its
        content.
   - A missing ID or a cycle is an error, never a panic.
 - **Tests cover every decoder rule with a negative fixture:** bad magic,
@@ -218,7 +218,7 @@ This crate depends on `jj-lib`.
   - `test_bad_locking_children` is excluded because it merges repo
     directories file by file, which a single database can't support.
 - The acceptance test is `fossil-stores/tests/reload.rs`. It:
-  1. initialises a repo, commits, and rebases into a conflict;
+  1. initializes a repo, commits, and rebases into a conflict;
   2. checks that nothing but `type` markers and `fossil.sqlite` exists
      outside the index cache;
   3. deletes the index;
@@ -231,10 +231,28 @@ This crate depends on `jj-lib`.
 ## 7. Next phases
 
 1. **jj-lib wasm port:**
-   - a `lock/` fallback;
-   - no `rayon` or `gix` on wasm;
-   - an `IndexStore` backed by SQL or memory;
-   - repo assembly through `RepoLoader::new` instead of filesystem paths.
+   - ~~a `lock/` fallback~~ — done: `lib/src/lock/wasm.rs`, plus `rand`'s
+     `getrandom` needing the `wasm_js` backend. `jj-lib --no-default-features`
+     now builds clean for `wasm32-unknown-unknown`; its native test suite is
+     unaffected. `rayon` and `gix` were never a *build*-time problem (`gix` is
+     already optional and off; `rayon` compiles for wasm32) — and `rayon`'s
+     thread pool, which would panic if actually invoked on a target with no
+     real threads, turns out not to be a *runtime* risk for `jjd` either:
+     `rayon` appears in exactly two places, both opt-in rather than on any
+     path `RepoLoader`/`Transaction`/commit-writing touch. `fix.rs`'s
+     `ParallelFileFixer` is a `FileFixer` impl a caller must choose to
+     construct (the `fix` capability isn't in `schema/jjd.capnp`), and
+     `local_working_copy.rs`'s `rayon::scope` calls are internal to
+     `LocalWorkingCopy`, which `SqlWorkingCopy` replaces. So the constraint
+     for `jjd` is simply: never construct `ParallelFileFixer` or
+     `LocalWorkingCopy` from wasm. Worth a `ParallelFileFixer` sequential
+     fallback on wasm32 someday, as a courtesy to other consumers of jj-lib
+     as a library, but not before `jjd` needs it;
+   - an `IndexStore` backed by SQL or memory (`DefaultIndexStore` still writes
+     segment files to a real filesystem);
+   - repo assembly through `RepoLoader::new` instead of filesystem paths
+     (`ReadonlyRepo::init`/`Workspace::init_with_factories` still call
+     `std::fs` directly, regardless of which stores are passed in).
 2. **`SqlWorkingCopy`:**
    - `wc_file(workspace, path, rid, exec, symlink, mtime)`;
    - snapshot in O(dirty set);
