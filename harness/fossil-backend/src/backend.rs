@@ -401,12 +401,10 @@ impl Backend for FossilBackend {
             // (not UNION ALL) terminates even on a corrupt cyclic graph.
             let rows = x
                 .query(
-                    "WITH RECURSIVE \
-                       ancestors(rid) AS (SELECT ? UNION \
-                         SELECT e.parent FROM jj_copy_edge e JOIN ancestors ON e.child = ancestors.rid), \
-                       des(rid) AS (SELECT rid FROM ancestors UNION \
-                         SELECT e.child FROM jj_copy_edge e JOIN des ON e.parent = des.rid) \
-                     SELECT b.uuid FROM des JOIN blob b ON b.rid = des.rid",
+                    "WITH RECURSIVE ancestors(rid) AS (SELECT ? UNION SELECT e.parent FROM \
+                     jj_copy_edge e JOIN ancestors ON e.child = ancestors.rid), des(rid) AS \
+                     (SELECT rid FROM ancestors UNION SELECT e.child FROM jj_copy_edge e JOIN des \
+                     ON e.parent = des.rid) SELECT b.uuid FROM des JOIN blob b ON b.rid = des.rid",
                     &[Param::Int(rid)],
                 )
                 .map_err(|err| read_err(copy_id, err))?;
