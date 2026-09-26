@@ -9,7 +9,7 @@ permissions: {}
 
 jobs:
   build-and-clean:
-    name: Build and clean
+    name: Build, validate, test and clean
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
@@ -22,6 +22,10 @@ jobs:
           toolchain: 1.97.1
       - name: Build
         run: cargo build --workspace --verbose
+      - name: Validate types
+        run: cargo check --workspace --all-targets --verbose
+      - name: Test
+        run: cargo test --workspace --verbose
       - name: Clean
         if: ${{ always() }}
         run: cargo clean
