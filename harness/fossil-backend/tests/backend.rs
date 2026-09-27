@@ -420,8 +420,13 @@ fn reload_from_disk() {
         backend.write_commit(c, None).block_on().unwrap()
     };
     assert!(dir.join(FossilBackend::DB_FILE).exists());
-    let backend = FossilBackend::load_at(&store_path).unwrap();
-    assert_eq!(backend.read_commit(&commit_id).block_on().unwrap(), written);
+    {
+        let backend = FossilBackend::load_at(&store_path).unwrap();
+        assert_eq!(backend.read_commit(&commit_id).block_on().unwrap(), written);
+    }
+    // `backend` (and the sqlite connection it holds) must be dropped before
+    // this: on Windows, unlike Unix, a file with an open handle can't be
+    // deleted.
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

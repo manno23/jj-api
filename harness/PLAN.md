@@ -231,10 +231,28 @@ This crate depends on `jj-lib`.
 ## 7. Next phases
 
 1. **jj-lib wasm port:**
-   - a `lock/` fallback;
-   - no `rayon` or `gix` on wasm;
-   - an `IndexStore` backed by SQL or memory;
-   - repo assembly through `RepoLoader::new` instead of filesystem paths.
+   - ~~a `lock/` fallback~~ — done: `lib/src/lock/wasm.rs`, plus `rand`'s
+     `getrandom` needing the `wasm_js` backend. `jj-lib --no-default-features`
+     now builds clean for `wasm32-unknown-unknown`; its native test suite is
+     unaffected. `rayon` and `gix` were never a *build*-time problem (`gix` is
+     already optional and off; `rayon` compiles for wasm32) — and `rayon`'s
+     thread pool, which would panic if actually invoked on a target with no
+     real threads, turns out not to be a *runtime* risk for `jjd` either:
+     `rayon` appears in exactly two places, both opt-in rather than on any
+     path `RepoLoader`/`Transaction`/commit-writing touch. `fix.rs`'s
+     `ParallelFileFixer` is a `FileFixer` impl a caller must choose to
+     construct (the `fix` capability isn't in `schema/jjd.capnp`), and
+     `local_working_copy.rs`'s `rayon::scope` calls are internal to
+     `LocalWorkingCopy`, which `SqlWorkingCopy` replaces. So the constraint
+     for `jjd` is simply: never construct `ParallelFileFixer` or
+     `LocalWorkingCopy` from wasm. Worth a `ParallelFileFixer` sequential
+     fallback on wasm32 someday, as a courtesy to other consumers of jj-lib
+     as a library, but not before `jjd` needs it;
+   - an `IndexStore` backed by SQL or memory (`DefaultIndexStore` still writes
+     segment files to a real filesystem);
+   - repo assembly through `RepoLoader::new` instead of filesystem paths
+     (`ReadonlyRepo::init`/`Workspace::init_with_factories` still call
+     `std::fs` directly, regardless of which stores are passed in).
 2. **`SqlWorkingCopy`:**
    - `wc_file(workspace, path, rid, exec, symlink, mtime)`;
    - snapshot in O(dirty set);

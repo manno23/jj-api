@@ -60,11 +60,15 @@ fn op_log(repo: &ReadonlyRepo) -> Vec<OperationId> {
 fn files_except_index(dir: &Path) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for entry in walk(dir) {
+        // Join with `/` regardless of platform: `Path`'s own separator is
+        // `\` on Windows, but the expected-paths literals below use `/`.
         let rel = entry
             .strip_prefix(dir)
             .unwrap()
-            .to_string_lossy()
-            .into_owned();
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/");
         if !rel.starts_with("index") {
             out.insert(rel);
         }
