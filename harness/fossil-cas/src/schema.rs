@@ -80,8 +80,8 @@ pub fn get_config(x: &dyn SqlExec, name: &str) -> SqlResult<Option<String>> {
 /// Writes a `config` value.
 pub fn set_config(x: &dyn SqlExec, name: &str, value: &str) -> SqlResult<()> {
     x.exec(
-        "INSERT INTO config(name, value) VALUES (?, ?) \
-         ON CONFLICT(name) DO UPDATE SET value = excluded.value",
+        "INSERT INTO config(name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = \
+         excluded.value",
         &[Param::Text(name), Param::Text(value)],
     )?;
     Ok(())

@@ -26,7 +26,7 @@
 //! | `IndexStore` | jj's default on-disk index, a cache rebuilt from the above |
 //!
 //! All stores of one repo share a single connection
-//! ([`RusqliteConn::shared`]), so their scopes are serialised the way they
+//! ([`RusqliteConn::shared`]), so their scopes are serialized the way they
 //! are on a Durable Object.
 
 #![warn(missing_docs)]
@@ -122,7 +122,7 @@ pub fn store_factories() -> StoreFactories {
     factories
 }
 
-/// Initialises a repo at `repo_path` (an empty `.jj/repo` directory) whose
+/// Initializes a repo at `repo_path` (an empty `.jj/repo` directory) whose
 /// durable state lives entirely in `repo_path/fossil.sqlite`.
 pub async fn init_repo(
     settings: &UserSettings,
@@ -155,7 +155,7 @@ pub async fn init_repo(
     .await
 }
 
-/// Initialises a workspace at `workspace_root` with a repo created as by
+/// Initializes a workspace at `workspace_root` with a repo created as by
 /// [`init_repo`] and jj's local working copy.
 pub async fn init_workspace(
     settings: &UserSettings,

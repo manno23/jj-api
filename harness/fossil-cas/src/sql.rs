@@ -250,7 +250,7 @@ mod native {
     /// A native SQLite connection.
     ///
     /// The connection sits behind a mutex held for the whole of each scope, so
-    /// scopes from different threads are serialised, like on a Durable Object.
+    /// scopes from different threads are serialized, like on a Durable Object.
     #[derive(Debug)]
     pub struct RusqliteConn {
         conn: Mutex<Connection>,
@@ -268,7 +268,7 @@ mod native {
 
         /// Returns the process-wide connection for the database at `path`,
         /// opening it on first use. Every store of one repo shares it, so
-        /// their scopes are serialised on one connection, as on a Durable
+        /// their scopes are serialized on one connection, as on a Durable
         /// Object.
         pub fn shared(path: &Path) -> SqlResult<Arc<Self>> {
             static OPEN: Mutex<Vec<(PathBuf, Weak<RusqliteConn>)>> = Mutex::new(Vec::new());

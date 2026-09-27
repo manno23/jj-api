@@ -230,8 +230,8 @@ impl BlobWriter {
         // the same content-addressed `rid` regardless.)
         let row = with(self.store.conn().as_ref(), Access::Write, |x| {
             x.query_row(
-                "INSERT INTO blob(uuid, size, enc, content) \
-                 VALUES ('~' || lower(hex(randomblob(32))), 0, ?, NULL) RETURNING rid",
+                "INSERT INTO blob(uuid, size, enc, content) VALUES ('~' || \
+                 lower(hex(randomblob(32))), 0, ?, NULL) RETURNING rid",
                 &[Param::Int(Encoding::Raw as i64)],
             )
         })?

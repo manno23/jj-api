@@ -98,8 +98,8 @@ impl WorkspaceStore for SqlWorkspaceStore {
         let bytes = path_to_bytes(&stored).map_err(store_err)?;
         with(self.conn.as_ref(), Access::Write, |x| {
             x.exec(
-                "INSERT INTO jj_workspace(name, path) VALUES (?, ?) \
-                 ON CONFLICT(name) DO UPDATE SET path = excluded.path",
+                "INSERT INTO jj_workspace(name, path) VALUES (?, ?) ON CONFLICT(name) DO UPDATE \
+                 SET path = excluded.path",
                 &[Param::Text(workspace_name.as_str()), Param::Blob(bytes)],
             )
         })

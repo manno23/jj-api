@@ -132,7 +132,7 @@ impl OpHeadsStore for SqlOpHeadsStore {
         Ok(heads)
     }
 
-    /// Scopes are already serialised per database, so no extra lock is taken.
+    /// Scopes are already serialized per database, so no extra lock is taken.
     async fn lock(&self) -> Result<Box<dyn OpHeadsStoreLock + '_>, OpHeadsStoreError> {
         Ok(Box::new(NoLock))
     }
